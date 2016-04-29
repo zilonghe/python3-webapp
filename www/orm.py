@@ -58,17 +58,21 @@ def select(sql, args, size=None):
 #       args turpe? 查询参数
 # @return: affected int 影响行数
 @asyncio.coroutine
-def execute(sql, args):
+def execute(sql, args, autocommit=True):
     log(sql)
     with (yield from __pool) as conn:
+        if not autocommit:
+            yield from conn.begin()
         try:
             cur = yield from conn.cursor()
-            sql = sql.replace("?", "%s")
-            print('------' + sql)
-            yield from cur.execute(sql, args)
+            yield from cur.execute(sql.replace('?', '%s'), args)
             affected = cur.rowcount
             yield from cur.close()
-        except BaseException:
+            if not autocommit:
+                yield from conn.commit()
+        except BaseException as e:
+            if not autocommit:
+                yield from conn.rollback()
             raise
         return affected
 
@@ -270,8 +274,8 @@ class Model(dict, metaclass=ModelMetaclass):
     def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
         args.append(self.getValueOrDefault(self.__primary_key__))
-        print('insert:' + self.__insert__)
-        print(args)
+        # print('insert:' + self.__insert__)
+        # print(args)
         rows = yield from execute(self.__insert__, args)
         if rows != 1:
             logging.warn('failed to insert record: affected rows: %s' % rows)
