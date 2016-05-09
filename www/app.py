@@ -5,6 +5,7 @@ import asyncio
 from aiohttp import web
 from jinja2 import Environment, FileSystemLoader # 从jinja2模板库导入环境与文件系统加载器
 
+import os
 import orm
 from coroweb import add_routes, add_static
 import handlers
@@ -160,23 +161,23 @@ def datetime_filter(t):
 
 
 # def index(request):
-# 	return web.Response(body=b'<h1>simjohn</h1>')
+#   return web.Response(body=b'<h1>simjohn</h1>')
 
 
 @asyncio.coroutine
 def init(loop):
-	yield from orm.create_pool(loop = loop, host="127.0.0.1", port = 3306, user = "www-data", password = "www-data", db = "awesome")
-	app = web.Application(loop=loop, middlewares=[logger_factory, response_factory])
-	# 设置模板为jiaja2, 并以时间为过滤器
+    yield from orm.create_pool(loop = loop, host="127.0.0.1", port = 3306, user = "www-data", password = "www-data", db = "awesome")
+    app = web.Application(loop=loop, middlewares=[logger_factory, response_factory])
+    # 设置模板为jiaja2, 并以时间为过滤器
     init_jinja2(app, filters=dict(datetime=datetime_filter))
     # 注册所有url处理函数
     add_routes(app, "handlers")
     # 将当前目录下的static目录将如app目录
     add_static(app)
     # 调用子协程:创建一个TCP服务器,绑定到"127.0.0.1:9000"socket,并返回一个服务器对象
-	srv = yield from loop.create_server(app.make_handler(), '127.0.0.1', 9000)
-	logging.info('server started at http://127.0.0.1:9000...')
-	return srv
+    srv = yield from loop.create_server(app.make_handler(), '127.0.0.1', 9000)
+    logging.info('server started at http://127.0.0.1:9000...')
+    return srv
 
 
 loop = asyncio.get_event_loop()

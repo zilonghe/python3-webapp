@@ -1,0 +1,6 @@
+
+www/schema.sql
+
+www/test_orm.py
+
+*.pyc

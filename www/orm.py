@@ -19,7 +19,7 @@ def create_pool(loop, **kw):
             port = kw.get("port", 3306),
             user = kw['user'],
             password = kw['password'],
-            db = kw['database'],
+            db = kw['db'],
             charset = kw.get("charset", "utf8"),
             autocommit = kw.get("autocommit", True),
 
@@ -49,7 +49,7 @@ def select(sql, args, size=None):
             rs = yield from cur.fetchmany(size)
         else:
             rs = yield from cur.fetchall()
-        yield from conn.close()
+        yield from cur.close()
         logging.info("rows return %s" % len(rs))
         return rs
 
