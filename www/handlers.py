@@ -155,8 +155,45 @@ def signin():
     }
 
 
+@post('/api/authenticate')
+def auth(*, email, passwd):
+    if not email:
+        raise APIValueError("email", "Invalid email")
+    if not passwd:
+        raise APIValueError("passwd", "Invalid password")
+    users = yield from User.findAll("email=?", [email]) # 在数据库中查找email,将以list形式返回
+    if len(users) == 0: # 查询结果为空,即数据库中没有相应的email记录,说明用户不存在
+        raise APIValueError("email", "Email not exits")
+    user = users[0] # 取得用户记录.事实上,就只有一条用户记录,只不过返回的是list
+    # 验证密码
+    # 数据库中存储的并非原始的用户密码,而是加密的字符串
+    # 我们对此时用户输入的密码做相同的加密操作,将结果与数据库中储存的密码比较,来验证密码的正确性
+    # 以下步骤合成为一步就是:sha1 = hashlib.sha1((user.id+":"+passwd).encode("utf-8"))
+    # 对照用户时对原始密码的操作(见api_register_user),操作完全一样
+    sha1 = hashlib.sha1()
+    sha1.update(user.id.encode("utf-8"))
+    sha1.update(b":")
+    sha1.update(passwd.encode("utf-8"))
+    if user.passwd != sha1.hexdigest():
+        raise APIValueError("passwd", "Invalid password")
+    # 用户登录之后,同样的设置一个cookie,与注册用户部分的代码完全一样
+    r = web.Response()
+    r.set_cookie(COOKIE_NAME, user2cookie(user, 86400), max_age=86400, httponly=True)
+    user.passwd = "*****"
+    r.content_type = "application/json"
+    r.body = json.dumps(user, ensure_ascii=False).encode("utf-8")
+    return r
 
 
+@get("/signout")
+def signout(request):
+    referer = request.headers.get("Referer")
+    r = web.HTTPFound(referer or '/')
+    r.set_cookie(COOKIE_NAME, "-deleted-", max_age=0, httponly=True)
+    logging.info("user signed out.")
+    return r
+
+    
 
 
 
