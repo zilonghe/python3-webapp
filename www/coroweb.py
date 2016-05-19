@@ -136,7 +136,7 @@ class RequestHandler(object):
             kw = dict(**request.match_info)
         else:
             #kw不为空，且url处理函数无**kwargs参数但有keyword_only参数，且只把keyword_only参数名放入kw中
-            if not self.has_var_kw_args and self._named_kw_args:
+            if not self._has_var_kw_args and self._named_kw_args:
                 copy = dict()
                 for name in self._named_kw_args:
                     if name in kw:
