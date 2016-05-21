@@ -146,6 +146,7 @@ def response_factory(app, handler):
                 return resp
             # 存在对应模板的,则将套用模板,用request handler的结果进行渲染
             else:
+                r['__user__'] = request.__user__
                 resp = web.Response(body=app["__templating__"].get_template(template).render(**r).encode("utf-8"))
                 resp.content_type = "text/html;charset=utf-8"
                 return resp
