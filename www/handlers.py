@@ -15,8 +15,9 @@ import asyncio
 from aiohttp import web
 from coroweb import get, post # 导入装饰器,这样就能很方便的生成request handler
 from models import User, Comment, Blog, next_id
-from apis import APIResourceNotFoundError, APIValueError, APIError
+from apis import APIResourceNotFoundError, APIValueError, APIError, Page
 from config import configs
+import markdown2
 
 # 此处所列所有的handler都会在app.py中通过add_routes自动注册到app.router上
 # 因此,在此脚本尽情地书写request handler即可
