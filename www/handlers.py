@@ -26,6 +26,35 @@ COOKIE_NAME = 'awesession'
 _COOKIE_KEY = configs.session.secret
 
 
+# 验证用户身份
+def check_admin(request):
+    # 检查用户是否管理员
+    # 对于已登录的用户,检查其admin属性. 管理员的admin为真
+    if request.__user__ is None or not request.__user__.admin:
+        raise APIPermissionError()
+
+# 取得页码
+def get_page_index(page_str):
+    # 将传入的字符串转为页码信息, 实际只是对传入的字符串做了合法性检查
+    p = 1
+    try:
+        p = int(page_str)
+    except ValueError as e:
+        pass
+    if p < 1:
+        p = 1
+    return p
+
+# 文本转html
+def text2html(text):
+    '''文本转html'''
+    # 先用filter函数对输入的文本进行过滤处理: 断行,去首尾空白字符
+    # 再用map函数对特殊符号进行转换,在将字符串装入html的<p>标签中
+    lines = map(lambda s: '<p>%s</p>' % s.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'), filter(lambda s: s.strip() != '', text.split('\n')))
+    # lines是一个字符串列表,将其组装成一个字符串,该字符串即表示html的段落
+    return ''.join(lines)
+
+    
 # 通过用户信息计算加密cookie
 def user2cookie(user, max_age):
     '''Generate cookie str by user.'''
@@ -193,7 +222,81 @@ def signout(request):
     logging.info("user signed out.")
     return r
 
-    
 
+# 获取单条博客的api
+@get('/api/blogs/{id}')
+def api_get_blog(*, id):
+    blog = yield from Blog.find(id)
+    return blog
+
+
+# 创建博客的api,从js的postJSON函数接收表单信息
+@post('/api/blogs')
+def api_create_blog(request, *, name, summary, content):
+    check_admin(request) # 检查用户权限
+    # 验证博客信息的合法性
+    if not name or not name.strip():
+        raise APIValueError("name", "name cannot be empty")
+    if not summary or not summary.strip():
+        raise APIValueError("summary", "summary cannot be empty")
+    if not content or not content.strip():
+        raise APIValueError("content", "content cannot be empty")
+    # 创建博客对象
+    blog = Blog(user_id=request.__user__.id, user_name=request.__user__.name, user_image=request.__user__.image, name=name.strip(),summary=summary.strip(), content=content.strip())
+    yield from blog.save() # 储存博客入数据库
+    return blog # 返回博客信息
+
+
+# 获取博客页面
+@get('/blog/{id}')
+def get_blog(id):
+    blog = yield from Blog.find(id) # 通过id从数据库拉取博客信息
+    # 从数据库拉取指定blog的全部评论,按时间降序排序,即最新的排在最前
+    comments = yield from Comment.findAll('blog_id=?', [id], orderBy='created_at desc')
+    # 将每条评论都转化为html格式(根据text2html代码可知,实际为html的<p>)
+    for c in comments:
+        c.html_content = text2html(c.content)
+    blog.html_content = markdown2.markdown(blog.content) # blog是markdown格式,将其转换为html格式
+    return {
+        # 返回的参数将在jinja2模板中被解析
+        "__template__": "blog.html",
+        "blog": blog,
+        "comments": comments
+    }
+
+
+# 获取blog信息的api
+@get('/api/blogs')
+def api_blogs(*, page='1'):
+    page_index = get_page_index(page)
+    num = yield from Blog.findNumber('count(id)')  # num为博客总数
+    p = Page(num, page_index) # 创建page对象
+    if num == 0:
+        return dict(page=p, blogs=())  # 若博客数为0,返回字典,将被app.py的response中间件再处理
+    # 博客总数不为0,则从数据库中抓取博客
+    # limit强制select语句返回指定的记录数,前一个参数为偏移量,后一个参数为记录的最大数目
+    blogs = yield from Blog.findAll(orderBy="created_at desc", limit=(p.offset, p.limit))
+    return dict(page=p, blogs=blogs)  # 返回字典,以供response中间件处理
+
+
+# 写博客的页面
+@get('/manage/blogs/create')
+def manage_create_blog():
+    return {
+        "__template__": "manage_blog_edit.html",
+        'id': '',    # id的值将传给js变量I
+        # action的值也将传给js变量action
+        # 将在用户提交博客的时候,将数据post到action指定的路径,此处即为创建博客的api
+        'action': '/api/blogs'
+    }
+
+
+# 管理博客的页面
+@get('/manage/blogs')
+def manage_blogs(*, page='1'):  # 管理页面默认从"1"开始
+    return {
+        "__template__": "manage_blogs.html",
+        "page_index": get_page_index(page)  #通过page_index来显示分页
+    }
 
 

@@ -76,7 +76,7 @@ def has_var_kw_args(fn):
 def has_request_arg(fn):
     params = inspect.signature(fn).parameters
     found = False
-    for name, params in params.items():
+    for name, param in params.items():
         if name == 'request':
             found = True
             continue
