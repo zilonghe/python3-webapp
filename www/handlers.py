@@ -279,6 +279,11 @@ def api_blogs(*, page='1'):
     blogs = yield from Blog.findAll(orderBy="created_at desc", limit=(p.offset, p.limit))
     return dict(page=p, blogs=blogs)  # 返回字典,以供response中间件处理
 
+# 管理重定向
+@get("/manage/")
+def manage():
+    return "redirect:/manage/blogs"
+
 
 # 写博客的页面
 @get('/manage/blogs/create')
@@ -299,5 +304,39 @@ def manage_blogs(*, page='1'):  # 管理页面默认从"1"开始
         "__template__": "manage_blogs.html",
         "page_index": get_page_index(page)  #通过page_index来显示分页
     }
+
+
+# 修改博客的页面
+@get('/manage/blogs/edit')
+def manage_edit_blog(*, id):
+    return {
+        "__template__": "manage_blog_edit.html",
+        'id': id,    # id的值将传给js变量I
+        # action的值也将传给js变量action
+        # 将在用户提交博客的时候,将数据post到action指定的路径,此处即为创建博客的api
+        'action': '/api/blogs/%s' % id
+    }
+
+
+# 修改博客的api
+@post('/api/blogs/{id}')
+def api_update_blog(id, request, *, name, summary, content):
+    check_admin(request) # 检查用户权限
+    # 验证博客信息的合法性
+    if not name or not name.strip():
+        raise APIValueError("name", "name cannot be empty")
+    if not summary or not summary.strip():
+        raise APIValueError("summary", "summary cannot be empty")
+    if not content or not content.strip():
+        raise APIValueError("content", "content cannot be empty")
+    blog = yield from Blog.find(id)  # 获取修改前的博客
+    blog.name = name.strip()
+    blog.summary = summary.strip()
+    blog.content = content.strip()
+    yield from blog.update() # 更新博客
+    return blog # 返回博客信息
+
+
+
 
 

@@ -66,6 +66,8 @@ def execute(sql, args, autocommit=True):
             yield from conn.begin()
         try:
             cur = yield from conn.cursor()
+            tmp = sql.replace('?', '%s')
+            logging.info("tmp sql:[%s], args:[%s]" %(tmp, args))
             yield from cur.execute(sql.replace('?', '%s'), args)
             affected = cur.rowcount
             yield from cur.close()
@@ -170,7 +172,7 @@ class ModelMetaclass(type):
         attrs['__insert__'] = "insert into {0} ({1}, {2}) values ({3})".format(tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields)+1))
         # print(attrs['__insert__'])
         #insert into 'tableName' (`age`, `name`, `primaryKey`) values (?, ?, ?)
-        attrs['__update__'] = "update `%s` set `%s` where `%s` =?" %(tableName, ', '.join(map(lambda f: "`%s`" % (mappings.get(f).name or f), fields)), primaryKey)
+        attrs['__update__'] = "update `%s` set %s where `%s` =?" %(tableName, ', '.join(map(lambda f: "`%s`=?" % (mappings.get(f).name or f), fields)), primaryKey)
 
         attrs['__delete__'] = 'delete from `%s` where `%s`=?' % (tableName, primaryKey)
         return type.__new__(cls, name, bases, attrs)
@@ -194,7 +196,7 @@ class Model(dict, metaclass=ModelMetaclass):
         self[key] = value
 
 
-    def getValue(self):
+    def getValue(self, key):
         return getattr(self, key, None)
 
 
@@ -275,8 +277,6 @@ class Model(dict, metaclass=ModelMetaclass):
     def save(self):
         args = list(map(self.getValueOrDefault, self.__fields__))
         args.append(self.getValueOrDefault(self.__primary_key__))
-        # print('insert:' + self.__insert__)
-        # print(args)
         rows = yield from execute(self.__insert__, args)
         if rows != 1:
             logging.warn('failed to insert record: affected rows: %s' % rows)
