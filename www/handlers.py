@@ -103,25 +103,21 @@ def cookie2user(cookie_str):
 
 
 @get('/')
-def index(request):
-    summary = 'Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.'
-    blogs = [
-        Blog(id='1', name='Test Blog2', summary=summary, created_at=time.time()-120),
-        Blog(id='2', name='Something New', summary=summary, created_at=time.time()-3600),
-        Blog(id='3', name='Learn Swift', summary=summary, created_at=time.time()-7200)
-    ]
+def index(*, page="1"):
+    page_index = get_page_index(page)
+    num = yield from Blog.findNumber("count(id)")
+    page = Page(num)
+    if num == 0:
+        blogs = []
+    else:
+        blogs = yield from Blog.findAll(orderBy = "created_at desc", limit=(page.offset, page.limit))
+    # 返回一个字典, 其指示了使用何种模板,模板的内容
+    # app.py的response_factory将会对handler的返回值进行分类处理
     return {
-        '__template__': 'blogs.html',
-        'blogs': blogs
+        "__template__": "blogs.html",
+        "page": page,
+        "blogs": blogs  # 参数blogs将在jinja2模板中被解析
     }
-
-
-@get('/api/users')
-def api_get_users():
-    users = yield from User.findAll(orderBy='created_at desc')
-    for u in users:
-        u.passwd = '******'
-    return dict(users=users)
 
 
 # 匹配邮箱与加密后密码的证得表达式
@@ -217,8 +213,12 @@ def auth(*, email, passwd):
 
 @get("/signout")
 def signout(request):
+    # 请求头部的referer,表示从哪里链接到当前页面,即上一个页面
+    # 用户登出时,实际转到了/signout路径下,因此为了使登出毫无维和感,获得"当前"url
     referer = request.headers.get("Referer")
+    # 若无前一个网址,可能是用户新打开了一个标签页,则登录后转到首页
     r = web.HTTPFound(referer or '/')
+    # 以设置cookie的最大存活时间来删除cookie
     r.set_cookie(COOKIE_NAME, "-deleted-", max_age=0, httponly=True)
     logging.info("user signed out.")
     return r
@@ -318,6 +318,39 @@ def manage_edit_blog(*, id):
     }
 
 
+# 管理评论的页面
+@get('/manage/comments')
+def manage_comments(*, page='1'):  # 管理页面默认从"1"开始
+    return {
+        "__template__": "manage_comments.html",
+        "page_index": get_page_index(page)  #通过page_index来显示分页
+    }
+
+
+# 管理用户的页面
+@get('/manage/users')
+def manage_users(*, page='1'):  # 管理页面默认从"1"开始
+    return {
+        "__template__": "manage_users.html",
+        "page_index": get_page_index(page)  #通过page_index来显示分页
+    }
+
+
+# API: 获取用户信息
+@get('/api/users')
+def api_get_users(*, page="1"):
+    page_index = get_page_index(page)
+    num = yield from User.findNumber("count(id)")
+    p = Page(num, page_index)
+    if num == 0:
+        return dict(page=p, users=())
+    users = yield from User.findAll(orderBy="created_at desc")
+    for u in users:
+        u.passwd = "*****"
+    # 以dict形式返回,并且未指定__template__,将被app.py的response factory处理为json
+    return dict(page=p, users=users)
+
+
 # 修改博客的api
 @post('/api/blogs/{id}')
 def api_update_blog(id, request, *, name, summary, content):
@@ -335,6 +368,59 @@ def api_update_blog(id, request, *, name, summary, content):
     blog.content = content.strip()
     yield from blog.update() # 更新博客
     return blog # 返回博客信息
+
+
+# 删除博客的api
+@post('/api/blogs/{id}/delete')
+def api_delete_blog(request, *, id):
+    check_admin(request)
+    blog = yield from Blog.find(id)
+    yield from blog.remove()
+    return dict(id=id)
+
+
+# 获取博客评论的api
+@get('/api/comments')
+def api_comments(*, page='1'):
+    page_index = get_page_index(page)
+    num = yield from Comment.findNumber('count(id)')  # num为评论总数
+    p = Page(num, page_index) # 创建page对象, 保存页面信息
+    if num == 0:
+        return dict(page=p, comments=())  # 若评论数0,返回字典,将被app.py的response中间件再处理
+    # 博客总数不为0,则从数据库中抓取博客
+    # limit强制select语句返回指定的记录数,前一个参数为偏移量,后一个参数为记录的最大数目
+    comments = yield from Comment.findAll(orderBy="created_at desc", limit=(p.offset, p.limit))
+    return dict(page=p, comments=comments)  # 返回字典,以供response中间件处理
+
+
+# API: 创建评论
+@post('/api/blogs/{id}/comments')
+def api_create_comment(id, request,  *, content):
+    user = request.__user__
+    if user is None:
+        raise APIPermissionError("Please signin first.")
+    # 验证评论内容的存在性
+    if not content or not content.strip():
+        raise APIValueError("content", "content cannot be empty")
+    # 检查博客的存在性
+    blog = yield from Blog.find(id)
+    if blog is None:
+        raise APIResourceNotFoundError("Blog", "No such a blog.")
+    # 创建评论对象
+    comment = Comment(user_id=user.id, user_name=user.name, user_image=user.image, blog_id = blog.id, content=content.strip())
+    yield from comment.save() # 储存评论入数据库
+    return comment # 返回评论
+
+
+# API: 删除评论
+@post("/api/comments/{id}/delete")
+def api_delete_comment(id, request):
+    check_admin(request)  # 检查权限
+    comment = yield from Comment.find(id)  # 从数据库中取出评论
+    if comment is None:
+        raise APIResourceNotFoundError("Comment", "No such a Comment.")
+    yield from comment.remove()  # 删除评论
+    return dict(id=id)  # 返回被删评论的ID
 
 
 
